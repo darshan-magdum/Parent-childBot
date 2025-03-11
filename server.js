@@ -36,7 +36,7 @@ const conversationSchema = new mongoose.Schema({
 });
 const Conversation = mongoose.model("Conversation", conversationSchema);
 
-// ✅ **Common API for Sending and Receiving Messages**
+// ✅ **1. Parent Bot Sends a Message to Child Bot**
 app.post("/bot-communication", async (req, res) => {
     try {
         const { botId, message, sender } = req.body;
@@ -105,7 +105,41 @@ app.post("/bot-communication", async (req, res) => {
     }
 });
 
-// ✅ **Get Token (Refresh if Expired)**
+// ✅ **2. Child Bot Fetches the Latest Message from Parent Bot**
+app.get("/messages/latest/:botId", async (req, res) => {
+    try {
+        const { botId } = req.params;
+        const latestMessage = await Conversation.findOne({ botId, sender: "parent" }).sort({ timestamp: -1 });
+
+        if (!latestMessage) {
+            return res.json({ message: "❌ No messages found from parent bot to this child bot." });
+        }
+
+        res.json({ latestMessage });
+    } catch (error) {
+        res.status(500).json({ error: "❌ Error fetching latest message", details: error.message });
+    }
+});
+
+// ✅ **3. Parent Bot Fetches the Latest Response from Child Bot**
+// ✅ Get Latest Message from Any Child Bot
+app.get("/messages/child", async (req, res) => {
+    try {
+        // Fetch latest message where sender is "child"
+        const latestChildMessage = await Conversation.findOne({ sender: "child" }).sort({ timestamp: -1 });
+
+        if (!latestChildMessage) {
+            return res.json({ message: "❌ No messages found from any child bot." });
+        }
+
+        res.json({ latestChildMessage });
+    } catch (error) {
+        res.status(500).json({ error: "❌ Error fetching child message", details: error.message });
+    }
+});
+
+
+// ✅ **4. Get Token (Refresh if Expired)**
 async function getValidToken(bot) {
     const now = new Date();
     if (bot.token && bot.tokenExpiry > now) {
@@ -123,7 +157,7 @@ async function getValidToken(bot) {
     return bot.token;
 }
 
-// ✅ **Add a New Child Bot**
+// ✅ **5. Add a New Child Bot**
 app.post("/add-bot", async (req, res) => {
     try {
         const { botId, botName, capabilities, directLineSecret } = req.body;
@@ -132,22 +166,6 @@ app.post("/add-bot", async (req, res) => {
         res.json({ message: "✅ Child bot added successfully!", bot: newBot });
     } catch (error) {
         res.status(500).json({ error: "❌ Error adding bot", details: error.message });
-    }
-});
-
-// ✅ **Get Latest Parent Message for a Child Bot**
-app.get("/messages/latest/:botId", async (req, res) => {
-    try {
-        const { botId } = req.params;
-        const latestMessage = await Conversation.findOne({ botId, sender: "parent" }).sort({ timestamp: -1 });
-
-        if (!latestMessage) {
-            return res.json({ message: "❌ No messages found from parent bot to this child bot." });
-        }
-
-        res.json({ latestMessage });
-    } catch (error) {
-        res.status(500).json({ error: "❌ Error fetching latest message", details: error.message });
     }
 });
 
