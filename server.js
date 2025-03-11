@@ -169,6 +169,17 @@ app.post("/add-bot", async (req, res) => {
     }
 });
 
+// ✅ **6. Get All Added Bots (Filtered Fields)**
+app.get("/Getbots", async (req, res) => {
+    try {
+        const bots = await Bot.find({}, "botId botName capabilities");
+        res.json({ bots });
+    } catch (error) {
+        res.status(500).json({ error: "❌ Error fetching bots", details: error.message });
+    }
+});
+
+
 // ✅ **Start Server**
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
