@@ -36,15 +36,72 @@ const conversationSchema = new mongoose.Schema({
 });
 const Conversation = mongoose.model("Conversation", conversationSchema);
 
-// ✅ **Add a New Child Bot**
-app.post("/add-bot", async (req, res) => {
+// ✅ **Common API for Sending and Receiving Messages**
+app.post("/bot-communication", async (req, res) => {
     try {
-        const { botId, botName, capabilities, directLineSecret } = req.body;
-        const newBot = new Bot({ botId, botName, capabilities, directLineSecret });
-        await newBot.save();
-        res.json({ message: "✅ Child bot added successfully!", bot: newBot });
+        const { botId, message, sender } = req.body;
+
+        if (sender === "parent") {
+            // ✅ Parent sends a message to the child bot
+            const bot = await Bot.findOne({ botId });
+            if (!bot) return res.status(404).json({ error: "❌ Bot not found" });
+
+            const directLineToken = await getValidToken(bot);
+
+            const conversationResponse = await axios.post(
+                "https://directline.botframework.com/v3/directline/conversations",
+                {},
+                { headers: { Authorization: `Bearer ${directLineToken}` } }
+            );
+
+            const conversationId = conversationResponse.data.conversationId;
+
+            // ✅ Send message to child bot
+            await axios.post(
+                `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
+                {
+                    type: "message",
+                    from: { id: "parentBot" },
+                    text: message
+                },
+                { headers: { Authorization: `Bearer ${directLineToken}` } }
+            );
+
+            // ✅ Store message in database
+            await Conversation.create({
+                conversationId,
+                botId,
+                sender: "parent",
+                message
+            });
+
+            res.json({ message: "✅ Message sent successfully!", conversationId });
+
+        } else if (sender === "child") {
+            // ✅ Child bot response handling
+            const lastParentMessage = await Conversation.findOne({ botId, sender: "parent" }).sort({ timestamp: -1 });
+
+            if (!lastParentMessage) {
+                console.log(`🚨 Message from ${botId} received, but no parent message found.`);
+                return res.status(400).json({ error: "No matching parent message found." });
+            }
+
+            console.log(`📩 Received from ${botId}: ${message}`);
+
+            // ✅ Store child bot's response
+            await Conversation.create({
+                conversationId: lastParentMessage.conversationId,
+                botId,
+                sender: "child",
+                message
+            });
+
+            res.json({ status: "✅ Message received successfully!" });
+        } else {
+            res.status(400).json({ error: "❌ Invalid sender type. Use 'parent' or 'child'." });
+        }
     } catch (error) {
-        res.status(500).json({ error: "❌ Error adding bot", details: error.message });
+        res.status(500).json({ error: "❌ Error in bot communication", details: error.message });
     }
 });
 
@@ -66,83 +123,19 @@ async function getValidToken(bot) {
     return bot.token;
 }
 
-// ✅ **Parent Bot Sends a Message to a Child Bot**
-app.post("/send-message", async (req, res) => {
+// ✅ **Add a New Child Bot**
+app.post("/add-bot", async (req, res) => {
     try {
-        const { botId, message } = req.body;
-        const bot = await Bot.findOne({ botId });
-        if (!bot) return res.status(404).json({ error: "❌ Bot not found" });
-
-        const directLineToken = await getValidToken(bot);
-        const conversationResponse = await axios.post(
-            "https://directline.botframework.com/v3/directline/conversations",
-            {},
-            { headers: { Authorization: `Bearer ${directLineToken}` } }
-        );
-        const conversationId = conversationResponse.data.conversationId;
-
-        // ✅ Send Message to the Child Bot
-        await axios.post(
-            `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
-            {
-                type: "message",
-                from: { id: "parentBot" },
-                text: message
-            },
-            { headers: { Authorization: `Bearer ${directLineToken}` } }
-        );
-
-        // ✅ Store message in database
-        await Conversation.create({
-            conversationId,
-            botId,
-            sender: "parent",
-            message
-        });
-
-        res.json({ message: "✅ Message sent successfully!", conversationId });
+        const { botId, botName, capabilities, directLineSecret } = req.body;
+        const newBot = new Bot({ botId, botName, capabilities, directLineSecret });
+        await newBot.save();
+        res.json({ message: "✅ Child bot added successfully!", bot: newBot });
     } catch (error) {
-        res.status(500).json({ error: "❌ Error sending message", details: error.message });
+        res.status(500).json({ error: "❌ Error adding bot", details: error.message });
     }
 });
 
-// ✅ **Webhook: Receive Messages from Child Bots**
-app.post("/receive-message", async (req, res) => {
-    try {
-        const { botId, message } = req.body;
-        
-        // ✅ Check if it's a reply to an existing parent message
-        const lastParentMessage = await Conversation.findOne({ botId, sender: "parent" }).sort({ timestamp: -1 });
-
-        if (!lastParentMessage) {
-            console.log(`🚨 Message from ${botId} received, but no parent message found.`);
-            return res.status(400).json({ error: "No matching parent message found." });
-        }
-
-        console.log(`📩 Received from ${botId}: ${message}`);
-
-        // ✅ Store the message as a response
-        await Conversation.create({
-            conversationId: lastParentMessage.conversationId,
-            botId,
-            sender: "child",
-            message
-        });
-
-        res.json({ status: "✅ Message received successfully!" });
-    } catch (error) {
-        res.status(500).json({ error: "❌ Error receiving message", details: error.message });
-    }
-});
-
-// ✅ **Child Bot Should Send Responses to Parent's Webhook**
-async function sendResponseToParent(botId, message) {
-    await axios.post(
-        "http://localhost:5000/receive-message",
-        { botId, message }
-    );
-}
-
+// ✅ **Get Latest Parent Message for a Child Bot**
 app.get("/messages/latest/:botId", async (req, res) => {
     try {
         const { botId } = req.params;
@@ -157,7 +150,6 @@ app.get("/messages/latest/:botId", async (req, res) => {
         res.status(500).json({ error: "❌ Error fetching latest message", details: error.message });
     }
 });
-
 
 // ✅ **Start Server**
 const PORT = process.env.PORT || 5000;
