@@ -172,7 +172,7 @@ app.post("/add-bot", async (req, res) => {
 // ✅ **6. Get All Added Bots (Filtered Fields)**
 app.get("/Getbots", async (req, res) => {
     try {
-        const bots = await Bot.find({}, "botId botName capabilities");
+        const bots = await Bot.find({}, "botId botName capabilities directLineSecret");
         res.json({ bots });
     } catch (error) {
         res.status(500).json({ error: "❌ Error fetching bots", details: error.message });
