@@ -47,12 +47,13 @@ app.post('/api/bots/register', async (req, res) => {
 // Get All Bots (GET)
 app.get('/api/bots', async (req, res) => {
     try {
-        const bots = await Bot.find().select('-secretKey'); // Exclude secretKey from response
+        const bots = await Bot.find(); // No exclusion of secretKey
         res.json(bots);
     } catch (error) {
         res.status(500).json({ message: "Server Error", error });
     }
 });
+
 
 // Function to continuously poll the bot API until a response is received
 const getBotResponse = async (endpoint, conversationId, userId, key) => {
